@@ -14,6 +14,8 @@
 #include "esp_bt.h"
 #include "driver/uart.h"
 #include "string.h"
+#include "driver/gpio.h"
+#include "hal/gpio_ll.h"
 
 #include "esp_gap_ble_api.h"
 #include "esp_gatts_api.h"
@@ -50,7 +52,6 @@ static const uint16_t spp_service_uuid = 0xABF0;
 #ifdef SUPPORT_HEARTBEAT
 #define ESP_GATT_UUID_SPP_HEARTBEAT         0xABF5
 #endif
-
 
 static const uint8_t spp_adv_data[23] = {
     /* Flags */
@@ -527,13 +528,15 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
     	    res = find_char_and_desr_index(p_data->write.handle);
             if(p_data->write.is_prep == false){
                 if(res == SPP_IDX_SPP_DATA_RECV_VAL){
-                    char data[32] = {0};
+                    static char data[32];  // Make static to avoid stack allocations
                     if(p_data->write.len < sizeof(data)) {
                         memcpy(data, p_data->write.value, p_data->write.len);
                         data[p_data->write.len] = '\0';
-                        int adc_value;
-                        if(sscanf(data, "ADC:%d", &adc_value) == 1) {
-                            lost_adc_value = adc_value;  // Store the value
+
+                        // Direct integer parsing instead of sscanf
+                        if(p_data->write.len > 4 && data[0] == 'A' && data[1] == 'D' && data[2] == 'C' && data[3] == ':') {
+                            int adc_value = atoi(&data[4]);
+                            lost_adc_value = adc_value;
                             xTimerReset(adc_timeout_timer, 0);
                         }
                     }
@@ -663,8 +666,14 @@ static TaskHandle_t adc_print_task_handle = NULL;
 // Add this new task function
 static void adc_print_task(void *pvParameters)
 {
+    static char print_buffer[32];  // Static buffer to reduce stack allocations
     while(1) {
-        printf("ADC Value: %d\n", lost_adc_value);
+        // Only print if the value is not 127
+        if (lost_adc_value != 127) {
+            snprintf(print_buffer, sizeof(print_buffer), "\rADC Value: %-3d", lost_adc_value);
+            printf("%s", print_buffer);
+            fflush(stdout);
+        }
         vTaskDelay(pdMS_TO_TICKS(ADC_PRINT_INTERVAL_MS));
     }
 }
