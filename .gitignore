@@ -1,0 +1,51 @@
+# Build directories
+ble_spp_server/build
+debug/
+release/
+out/
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.code-workspace
+ble_spp_client.code-workspace
+
+# Object files and binaries
+*.o
+*.ko
+*.obj
+*.elf
+*.bin
+*.hex
+
+# Dependencies
+*.d
+
+# Libraries
+*.lib
+*.a
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Python virtual environment (if using any Python tools)
+venv/
+env/
+__pycache__/
+*.py[cod]
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+
