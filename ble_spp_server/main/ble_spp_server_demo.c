@@ -23,6 +23,9 @@
 #include "ble_spp_server_demo.h"
 #include "esp_gatt_common_api.h"
 
+// Set the log level to warn or error
+#define LOG_LOCAL_LEVEL ESP_LOG_WARN  // or ESP_LOG_ERROR for even less output
+
 #define GATTS_TABLE_TAG  "GATTS_SPP_DEMO"
 #define CLIENT_NAME      "GS-THUMB"
 
@@ -31,6 +34,10 @@
 #define ESP_SPP_APP_ID              0x56
 #define SAMPLE_DEVICE_NAME          CLIENT_NAME    //The Device Name Characteristics in GAP
 #define SPP_SVC_INST_ID	            0
+
+static TimerHandle_t adc_timeout_timer = NULL;
+static uint16_t lost_adc_value = 127;  // This will be our ADC value
+#define ADC_TIMEOUT_MS 200  // 200ms timeout
 
 /// SPP Service
 static const uint16_t spp_service_uuid = 0xABF0;
@@ -43,6 +50,7 @@ static const uint16_t spp_service_uuid = 0xABF0;
 #ifdef SUPPORT_HEARTBEAT
 #define ESP_GATT_UUID_SPP_HEARTBEAT         0xABF5
 #endif
+
 
 static const uint8_t spp_adv_data[23] = {
     /* Flags */
@@ -518,45 +526,17 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
     	case ESP_GATTS_WRITE_EVT: {
     	    res = find_char_and_desr_index(p_data->write.handle);
             if(p_data->write.is_prep == false){
-                ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_WRITE_EVT : handle = %d", res);
-                if(res == SPP_IDX_SPP_COMMAND_VAL){
-                    uint8_t * spp_cmd_buff = NULL;
-                    spp_cmd_buff = (uint8_t *)malloc((spp_mtu_size - 3) * sizeof(uint8_t));
-                    if(spp_cmd_buff == NULL){
-                        ESP_LOGE(GATTS_TABLE_TAG, "%s malloc failed", __func__);
-                        break;
+                if(res == SPP_IDX_SPP_DATA_RECV_VAL){
+                    char data[32] = {0};
+                    if(p_data->write.len < sizeof(data)) {
+                        memcpy(data, p_data->write.value, p_data->write.len);
+                        data[p_data->write.len] = '\0';
+                        int adc_value;
+                        if(sscanf(data, "ADC:%d", &adc_value) == 1) {
+                            lost_adc_value = adc_value;  // Store the value
+                            xTimerReset(adc_timeout_timer, 0);
+                        }
                     }
-                    memset(spp_cmd_buff,0x0,(spp_mtu_size - 3));
-                    memcpy(spp_cmd_buff,p_data->write.value,p_data->write.len);
-                    xQueueSend(cmd_cmd_queue,&spp_cmd_buff,10/portTICK_PERIOD_MS);
-                }else if(res == SPP_IDX_SPP_DATA_NTF_CFG){
-                    if((p_data->write.len == 2)&&(p_data->write.value[0] == 0x01)&&(p_data->write.value[1] == 0x00)){
-                        enable_data_ntf = true;
-                    }else if((p_data->write.len == 2)&&(p_data->write.value[0] == 0x00)&&(p_data->write.value[1] == 0x00)){
-                        enable_data_ntf = false;
-                    }
-                }
-#ifdef SUPPORT_HEARTBEAT
-                else if(res == SPP_IDX_SPP_HEARTBEAT_CFG){
-                    if((p_data->write.len == 2)&&(p_data->write.value[0] == 0x01)&&(p_data->write.value[1] == 0x00)){
-                        enable_heart_ntf = true;
-                    }else if((p_data->write.len == 2)&&(p_data->write.value[0] == 0x00)&&(p_data->write.value[1] == 0x00)){
-                        enable_heart_ntf = false;
-                    }
-                }else if(res == SPP_IDX_SPP_HEARTBEAT_VAL){
-                    if((p_data->write.len == sizeof(heartbeat_s))&&(memcmp(heartbeat_s,p_data->write.value,sizeof(heartbeat_s)) == 0)){
-                        heartbeat_count_num = 0;
-                    }
-                }
-#endif
-                else if(res == SPP_IDX_SPP_DATA_RECV_VAL){
-#ifdef SPP_DEBUG_MODE
-                    esp_log_buffer_char(GATTS_TABLE_TAG,(char *)(p_data->write.value),p_data->write.len);
-#else
-                    uart_write_bytes(UART_NUM_0, (char *)(p_data->write.value), p_data->write.len);
-#endif
-                }else{
-                    //TODO:
                 }
             }else if((p_data->write.is_prep == true)&&(res == SPP_IDX_SPP_DATA_RECV_VAL)){
                 ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_PREP_WRITE_EVT : handle = %d", res);
@@ -589,6 +569,9 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
     	    spp_conn_id = p_data->connect.conn_id;
     	    spp_gatts_if = gatts_if;
     	    is_connected = true;
+    	    lost_adc_value = 127;  // Reset to 127 on new connection
+    	    // Start the timer
+    	    xTimerStart(adc_timeout_timer, 0);
     	    memcpy(&spp_remote_bda,&p_data->connect.remote_bda,sizeof(esp_bd_addr_t));
 #ifdef SUPPORT_HEARTBEAT
     	    uint16_t cmd = 0;
@@ -598,6 +581,9 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
     	case ESP_GATTS_DISCONNECT_EVT:
             spp_mtu_size = 23;
     	    is_connected = false;
+    	    lost_adc_value = 127;
+    	    // Stop the timer
+    	    xTimerStop(adc_timeout_timer, 0);
     	    enable_data_ntf = false;
 #ifdef SUPPORT_HEARTBEAT
     	    enable_heart_ntf = false;
@@ -662,6 +648,27 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
     } while (0);
 }
 
+
+// Add this function to handle the timeout
+static void adc_timeout_callback(TimerHandle_t xTimer) {
+    if (is_connected) {
+        lost_adc_value = 127;
+    }
+}
+
+// Add these near the top with other task declarations
+static TaskHandle_t adc_print_task_handle = NULL;
+#define ADC_PRINT_INTERVAL_MS 100  // How often to print the ADC value
+
+// Add this new task function
+static void adc_print_task(void *pvParameters)
+{
+    while(1) {
+        printf("ADC Value: %d\n", lost_adc_value);
+        vTaskDelay(pdMS_TO_TICKS(ADC_PRINT_INTERVAL_MS));
+    }
+}
+
 void app_main(void)
 {
     esp_err_t ret;
@@ -712,6 +719,29 @@ void app_main(void)
     if (local_mtu_ret){
         ESP_LOGE(GATTS_TABLE_TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
     }
+
+    // Create the timer
+    adc_timeout_timer = xTimerCreate(
+        "adc_timeout",        // Timer name
+        pdMS_TO_TICKS(ADC_TIMEOUT_MS), // Timer period in ticks
+        pdTRUE,              // Auto reload
+        (void*)0,            // Timer ID
+        adc_timeout_callback // Callback function
+    );
+
+    if (adc_timeout_timer == NULL) {
+        ESP_LOGE(GATTS_TABLE_TAG, "Failed to create ADC timeout timer");
+    }
+
+    // Create the ADC print task
+    xTaskCreate(
+        adc_print_task,        // Task function
+        "adc_print_task",      // Task name
+        2048,                  // Stack size
+        NULL,                  // Parameters
+        1,                     // Priority
+        &adc_print_task_handle // Task handle
+    );
 
     return;
 }
