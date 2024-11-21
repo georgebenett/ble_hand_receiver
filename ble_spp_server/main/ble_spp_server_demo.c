@@ -24,11 +24,12 @@
 #include "esp_gatt_common_api.h"
 
 #define GATTS_TABLE_TAG  "GATTS_SPP_DEMO"
+#define CLIENT_NAME      "GS-THUMB"
 
 #define SPP_PROFILE_NUM             1
 #define SPP_PROFILE_APP_IDX         0
 #define ESP_SPP_APP_ID              0x56
-#define SAMPLE_DEVICE_NAME          "ESP_SPP_SERVER"    //The Device Name Characteristics in GAP
+#define SAMPLE_DEVICE_NAME          CLIENT_NAME    //The Device Name Characteristics in GAP
 #define SPP_SVC_INST_ID	            0
 
 /// SPP Service
@@ -49,7 +50,7 @@ static const uint8_t spp_adv_data[23] = {
     /* Complete List of 16-bit Service Class UUIDs */
     0x03,0x03,0xF0,0xAB,
     /* Complete Local Name in advertising */
-    0x0F,0x09, 'E', 'S', 'P', '_', 'S', 'P', 'P', '_', 'S', 'E', 'R','V', 'E', 'R'
+    0x0F,0x09, 'G', 'S', '-', 'T', 'H', 'U', 'M', 'B', 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
 static uint16_t spp_mtu_size = 23;
