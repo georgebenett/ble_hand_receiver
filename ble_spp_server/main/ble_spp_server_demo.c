@@ -528,17 +528,12 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
     	    res = find_char_and_desr_index(p_data->write.handle);
             if(p_data->write.is_prep == false){
                 if(res == SPP_IDX_SPP_DATA_RECV_VAL){
-                    static char data[32];  // Make static to avoid stack allocations
-                    if(p_data->write.len < sizeof(data)) {
-                        memcpy(data, p_data->write.value, p_data->write.len);
-                        data[p_data->write.len] = '\0';
-
-                        // Direct integer parsing instead of sscanf
-                        if(p_data->write.len > 4 && data[0] == 'A' && data[1] == 'D' && data[2] == 'C' && data[3] == ':') {
-                            int adc_value = atoi(&data[4]);
-                            lost_adc_value = adc_value;
-                            xTimerReset(adc_timeout_timer, 0);
-                        }
+                    if(p_data->write.len == 2) {  // Expecting exactly 2 bytes
+                        // Reconstruct the ADC value from the 2 bytes (little-endian)
+                        uint16_t adc_value = (uint16_t)p_data->write.value[0] |  // Low byte
+                                           ((uint16_t)p_data->write.value[1] << 8);  // High byte
+                        lost_adc_value = adc_value;
+                        xTimerReset(adc_timeout_timer, 0);
                     }
                 }
             }else if((p_data->write.is_prep == true)&&(res == SPP_IDX_SPP_DATA_RECV_VAL)){
@@ -659,21 +654,14 @@ static void adc_timeout_callback(TimerHandle_t xTimer) {
     }
 }
 
-// Add these near the top with other task declarations
+// Add these declarations at the top with other globals
 static TaskHandle_t adc_print_task_handle = NULL;
-#define ADC_PRINT_INTERVAL_MS 100  // How often to print the ADC value
+#define ADC_PRINT_INTERVAL_MS 10  // Print every 10ms
 
 // Add this new task function
-static void adc_print_task(void *pvParameters)
-{
-    static char print_buffer[32];  // Static buffer to reduce stack allocations
-    while(1) {
-        // Only print if the value is not 127
-        if (lost_adc_value != 127) {
-            snprintf(print_buffer, sizeof(print_buffer), "\rADC Value: %-3d", lost_adc_value);
-            printf("%s", print_buffer);
-            fflush(stdout);
-        }
+static void adc_print_task(void *pvParameters) {
+    while (1) {
+        printf("%d\n", lost_adc_value);
         vTaskDelay(pdMS_TO_TICKS(ADC_PRINT_INTERVAL_MS));
     }
 }
@@ -731,26 +719,19 @@ void app_main(void)
 
     // Create the timer
     adc_timeout_timer = xTimerCreate(
-        "adc_timeout",        // Timer name
-        pdMS_TO_TICKS(ADC_TIMEOUT_MS), // Timer period in ticks
-        pdTRUE,              // Auto reload
-        (void*)0,            // Timer ID
-        adc_timeout_callback // Callback function
+        "adc_timeout",
+        pdMS_TO_TICKS(ADC_TIMEOUT_MS),
+        pdTRUE,
+        (void*)0,
+        adc_timeout_callback
     );
 
     if (adc_timeout_timer == NULL) {
         ESP_LOGE(GATTS_TABLE_TAG, "Failed to create ADC timeout timer");
     }
 
-    // Create the ADC print task
-    xTaskCreate(
-        adc_print_task,        // Task function
-        "adc_print_task",      // Task name
-        2048,                  // Stack size
-        NULL,                  // Parameters
-        1,                     // Priority
-        &adc_print_task_handle // Task handle
-    );
+    // Create the printing task
+    xTaskCreate(adc_print_task, "adc_print", 2048, NULL, 5, &adc_print_task_handle);
 
     return;
 }
