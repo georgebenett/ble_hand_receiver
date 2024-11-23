@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
 
+#pragma once
 
+#include "esp_err.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,3 +49,9 @@ enum{
 
     SPP_IDX_NB,
 };
+
+// Initialize the BLE SPP server
+esp_err_t ble_spp_server_init(void);
+
+// Start the BLE SPP server
+esp_err_t ble_spp_server_start(void);

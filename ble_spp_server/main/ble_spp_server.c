@@ -5,6 +5,7 @@
  */
 
 
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -13,7 +14,6 @@
 #include "nvs_flash.h"
 #include "esp_bt.h"
 #include "driver/uart.h"
-#include "string.h"
 #include "driver/gpio.h"
 #include "hal/gpio_ll.h"
 
@@ -22,11 +22,10 @@
 #include "esp_bt_defs.h"
 #include "esp_bt_main.h"
 #include "esp_bt_device.h"
-#include "ble_spp_server_demo.h"
+#include "ble_spp_server.h"
 #include "esp_gatt_common_api.h"
-
-// Set the log level to warn or error
-#define LOG_LOCAL_LEVEL ESP_LOG_WARN  // or ESP_LOG_ERROR for even less output
+#include "adc.h"
+#include "ble_spp_server.h"
 
 #define GATTS_TABLE_TAG  "GATTS_SPP_DEMO"
 #define CLIENT_NAME      "GS-THUMB"
@@ -35,10 +34,8 @@
 #define SPP_PROFILE_APP_IDX         0
 #define ESP_SPP_APP_ID              0x56
 #define SAMPLE_DEVICE_NAME          CLIENT_NAME    //The Device Name Characteristics in GAP
-#define SPP_SVC_INST_ID	            0
+#define SPP_SVC_INST_ID             0
 
-static TimerHandle_t adc_timeout_timer = NULL;
-static uint16_t lost_adc_value = 127;  // This will be our ADC value
 #define ADC_TIMEOUT_MS 200  // 200ms timeout
 
 /// SPP Service
@@ -484,7 +481,7 @@ static void spp_task_init(void)
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
     esp_err_t err;
-    ESP_LOGI(GATTS_TABLE_TAG, "GAP_EVT, event %d", event);
+    ESP_LOGD(GATTS_TABLE_TAG, "GAP_EVT, event %d", event);
 
     switch (event) {
     case ESP_GAP_BLE_ADV_DATA_RAW_SET_COMPLETE_EVT:
@@ -506,7 +503,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
     esp_ble_gatts_cb_param_t *p_data = (esp_ble_gatts_cb_param_t *) param;
     uint8_t res = 0xff;
 
-    ESP_LOGI(GATTS_TABLE_TAG, "event = %x",event);
+    ESP_LOGD(GATTS_TABLE_TAG, "event = %x", event);
     switch (event) {
     	case ESP_GATTS_REG_EVT:
     	    ESP_LOGI(GATTS_TABLE_TAG, "%s %d", __func__, __LINE__);
@@ -532,8 +529,8 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                         // Reconstruct the ADC value from the 2 bytes (little-endian)
                         uint16_t adc_value = (uint16_t)p_data->write.value[0] |  // Low byte
                                            ((uint16_t)p_data->write.value[1] << 8);  // High byte
-                        lost_adc_value = adc_value;
-                        xTimerReset(adc_timeout_timer, 0);
+                        adc_update_value(adc_value);
+                        adc_reset_timeout();
                     }
                 }
             }else if((p_data->write.is_prep == true)&&(res == SPP_IDX_SPP_DATA_RECV_VAL)){
@@ -567,9 +564,8 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
     	    spp_conn_id = p_data->connect.conn_id;
     	    spp_gatts_if = gatts_if;
     	    is_connected = true;
-    	    lost_adc_value = 127;  // Reset to 127 on new connection
-    	    // Start the timer
-    	    xTimerStart(adc_timeout_timer, 0);
+    	    adc_reset_value();  // Reset to THROTTLE_NEUTRAL_VALUE on new connection
+    	    adc_start_timeout_monitor();
     	    memcpy(&spp_remote_bda,&p_data->connect.remote_bda,sizeof(esp_bd_addr_t));
 #ifdef SUPPORT_HEARTBEAT
     	    uint16_t cmd = 0;
@@ -579,9 +575,8 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
     	case ESP_GATTS_DISCONNECT_EVT:
             spp_mtu_size = 23;
     	    is_connected = false;
-    	    lost_adc_value = 127;
-    	    // Stop the timer
-    	    xTimerStop(adc_timeout_timer, 0);
+    	    adc_reset_value();
+    	    adc_stop_timeout_monitor();
     	    enable_data_ntf = false;
 #ifdef SUPPORT_HEARTBEAT
     	    enable_heart_ntf = false;
@@ -621,7 +616,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
 
 static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
 {
-    ESP_LOGI(GATTS_TABLE_TAG, "EVT %d, gatts if %d", event, gatts_if);
+    ESP_LOGD(GATTS_TABLE_TAG, "EVT %d, gatts if %d", event, gatts_if);
 
     /* If event is register event, store the gatts_if for each profile */
     if (event == ESP_GATTS_REG_EVT) {
@@ -646,92 +641,62 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
     } while (0);
 }
 
-
-// Add this function to handle the timeout
-static void adc_timeout_callback(TimerHandle_t xTimer) {
-    if (is_connected) {
-        lost_adc_value = 127;
-    }
-}
-
-// Add these declarations at the top with other globals
-static TaskHandle_t adc_print_task_handle = NULL;
-#define ADC_PRINT_INTERVAL_MS 10  // Print every 10ms
-
-// Add this new task function
-static void adc_print_task(void *pvParameters) {
-    while (1) {
-        printf("%d\n", lost_adc_value);
-        vTaskDelay(pdMS_TO_TICKS(ADC_PRINT_INTERVAL_MS));
-    }
-}
-
-void app_main(void)
+esp_err_t ble_spp_server_init(void)
 {
     esp_err_t ret;
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
 
-    // Initialize NVS
-    ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK( ret );
-
+    // Release memory used by classic BT
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
 
+    // Initialize BT controller
     ret = esp_bt_controller_init(&bt_cfg);
     if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s enable controller failed: %s", __func__, esp_err_to_name(ret));
-        return;
+        ESP_LOGE(GATTS_TABLE_TAG, "BT controller init failed: %s", esp_err_to_name(ret));
+        return ret;
     }
 
+    // Enable BT controller in BLE mode
     ret = esp_bt_controller_enable(ESP_BT_MODE_BLE);
     if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s enable controller failed: %s", __func__, esp_err_to_name(ret));
-        return;
+        ESP_LOGE(GATTS_TABLE_TAG, "BT controller enable failed: %s", esp_err_to_name(ret));
+        return ret;
     }
 
-    ESP_LOGI(GATTS_TABLE_TAG, "%s init bluetooth", __func__);
-
+    // Initialize Bluedroid stack
     ret = esp_bluedroid_init();
     if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s init bluetooth failed: %s", __func__, esp_err_to_name(ret));
-        return;
-    }
-    ret = esp_bluedroid_enable();
-    if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s enable bluetooth failed: %s", __func__, esp_err_to_name(ret));
-        return;
+        ESP_LOGE(GATTS_TABLE_TAG, "Bluedroid init failed: %s", esp_err_to_name(ret));
+        return ret;
     }
 
+    ret = esp_bluedroid_enable();
+    if (ret) {
+        ESP_LOGE(GATTS_TABLE_TAG, "Bluedroid enable failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t ble_spp_server_start(void)
+{
+    esp_err_t ret;
+
+    // Register callbacks
     esp_ble_gatts_register_callback(gatts_event_handler);
     esp_ble_gap_register_callback(gap_event_handler);
     esp_ble_gatts_app_register(ESP_SPP_APP_ID);
 
+    // Initialize SPP tasks
     spp_task_init();
 
-    esp_err_t local_mtu_ret = esp_ble_gatt_set_local_mtu(500);
-    if (local_mtu_ret){
-        ESP_LOGE(GATTS_TABLE_TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
+    // Set local MTU
+    ret = esp_ble_gatt_set_local_mtu(500);
+    if (ret) {
+        ESP_LOGE(GATTS_TABLE_TAG, "Set local MTU failed: %s", esp_err_to_name(ret));
+        return ret;
     }
-
-    // Create the timer
-    adc_timeout_timer = xTimerCreate(
-        "adc_timeout",
-        pdMS_TO_TICKS(ADC_TIMEOUT_MS),
-        pdTRUE,
-        (void*)0,
-        adc_timeout_callback
-    );
-
-    if (adc_timeout_timer == NULL) {
-        ESP_LOGE(GATTS_TABLE_TAG, "Failed to create ADC timeout timer");
-    }
-
-    // Create the printing task
-    xTaskCreate(adc_print_task, "adc_print", 2048, NULL, 5, &adc_print_task_handle);
-
-    return;
+    
+    return ESP_OK;
 }

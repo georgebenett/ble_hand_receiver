@@ -1,2 +1,2 @@
-idf_component_register(SRCS "ble_spp_server_demo.c"
+idf_component_register(SRCS "main.c" "ble_spp_server.c" "adc.c"
                     INCLUDE_DIRS ".")

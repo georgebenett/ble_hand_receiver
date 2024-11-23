@@ -5,7 +5,7 @@ release/
 out/
 
 # IDE specific files
-.vscode/
+ble_spp_server/.vscode/settings.json
 .idea/
 *.swp
 *.swo
