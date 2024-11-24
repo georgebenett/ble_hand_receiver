@@ -3,6 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
+#include "driver/uart.h"
 #include <stdio.h>
 
 #define ADC_TAG "ADC"
@@ -30,7 +31,7 @@ esp_err_t adc_init(void)
     }
 
     // Create ADC print task
-    if (xTaskCreate(adc_print_task, "adc_print", 2048, NULL, 5, &adc_print_task_handle) != pdPASS) {
+    if (xTaskCreate(adc_print_task, "adc_print", 4096, NULL, 5, &adc_print_task_handle) != pdPASS) {
         ESP_LOGE(ADC_TAG, "Failed to create ADC print task");
         return ESP_FAIL;
     }
@@ -56,10 +57,7 @@ void adc_timeout_callback(TimerHandle_t xTimer)
 
 void adc_print_task(void *pvParameters)
 {
-    while (1) {
-        ESP_LOGI(ADC_TAG, "%d", current_adc_value);
-        vTaskDelay(pdMS_TO_TICKS(20));
-    }
+    //print the adc value to the serial port
 }
 
 void adc_reset_timeout(void)
