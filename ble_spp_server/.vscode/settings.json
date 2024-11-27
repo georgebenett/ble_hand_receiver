@@ -16,6 +16,7 @@
     "timers.h": "c",
     "vesc_uart.h": "c",
     "bldc_interface_uart.h": "c",
-    "gpio_num.h": "c"
+    "gpio_num.h": "c",
+    "ble_spp_server.h": "c"
   }
 }

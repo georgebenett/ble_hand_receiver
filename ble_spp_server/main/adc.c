@@ -21,7 +21,9 @@ static void adc_timeout_callback(TimerHandle_t xTimer);
 static void uart_rx_task(void *pvParameters);
 static void uart_send_function(unsigned char *data, unsigned int len);
 static void configure_uart(void);
-static void test_nunchuck_task(void *pvParameters);
+static void send_nunchuck_throttle(void *pvParameters);
+
+TaskHandle_t adc_print_task_handle = NULL;
 
 esp_err_t adc_init(void)
 {
@@ -35,10 +37,30 @@ esp_err_t adc_init(void)
     xTaskCreate(uart_rx_task, "uart_rx_task", 4096, NULL, 5, NULL);
     
     // Create task for nunchuck testing
-    //xTaskCreate(test_nunchuck_task, "nunchuck_test", 2048, NULL, 5, NULL);
+    xTaskCreate(send_nunchuck_throttle, "nunchuck_test", 2048, NULL, 5, NULL);
 
     ESP_LOGI(ADC_TAG, "ADC and VESC communication initialized");
     
+    // Create the timeout timer
+    adc_timeout_timer = xTimerCreate(
+        "adc_timeout",
+        pdMS_TO_TICKS(ADC_TIMEOUT_MS),
+        pdTRUE,              // Auto reload
+        NULL,
+        adc_timeout_callback
+    );
+
+    if (adc_timeout_timer == NULL) {
+        ESP_LOGE(ADC_TAG, "Failed to create ADC timeout timer");
+        return ESP_FAIL;
+    }
+
+    // Create ADC print task
+    if (xTaskCreate(adc_print_task, "adc_print", 4096, NULL, 5, &adc_print_task_handle) != pdPASS) {
+        ESP_LOGE(ADC_TAG, "Failed to create ADC print task");
+        return ESP_FAIL;
+    }
+
     return ESP_OK;
 }
 
@@ -56,6 +78,18 @@ void adc_reset_value(void)
 void adc_timeout_callback(TimerHandle_t xTimer)
 {
     adc_reset_value();
+}
+
+void adc_print_task(void *pvParameters)
+{
+    while (1) {
+        mc_values* vesc_values = get_stored_vesc_values();
+        ESP_LOGI(ADC_TAG, "ADC: %d | VESC Voltage: %.2fV | Motor RPM: %.1f", 
+            current_adc_value,
+            vesc_values->v_in,
+            vesc_values->rpm);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 }
 
 void adc_reset_timeout(void)
@@ -129,11 +163,10 @@ static void configure_uart(void)
     ESP_ERROR_CHECK(uart_driver_install(UART_NUM_1, 256, 0, 0, NULL, 0));
 }
 
-static void test_nunchuck_task(void *pvParameters) {
-    uint8_t y_value = 0;
-    bool increasing = true;
-    
+static void send_nunchuck_throttle(void *pvParameters) {
+  
     while (1) {
+        uint8_t y_value = current_adc_value;
         // Create packet for nunchuck data
         uint8_t buffer[5];
         int32_t ind = 0;
@@ -146,24 +179,8 @@ static void test_nunchuck_task(void *pvParameters) {
         
         // Send the packet
         bldc_interface_send_packet(buffer, ind);
-        
-        // Update y_value
-        if (increasing) {
-            y_value++;
-            if (y_value >= 255) {
-                increasing = false;
-            }
-        } else {
-            y_value--;
-            if (y_value <= 0) {
-                increasing = true;
-            }
-        }
-        
-        // Log the current value
-        ESP_LOGI(ADC_TAG, "%d", y_value);
-        
+         
         // Delay before next update
-        vTaskDelay(pdMS_TO_TICKS(50));  // 50ms delay for smooth ramping
+        vTaskDelay(pdMS_TO_TICKS(20));  // 5ms delay for smooth ramping
     }
 }
