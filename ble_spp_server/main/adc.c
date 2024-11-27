@@ -19,7 +19,6 @@ static bool timeout_monitoring_active = false;
 
 static void adc_timeout_callback(TimerHandle_t xTimer);
 static void uart_rx_task(void *pvParameters);
-static void request_values_task(void *pvParameters);
 static void uart_send_function(unsigned char *data, unsigned int len);
 static void configure_uart(void);
 static void test_nunchuck_task(void *pvParameters);
@@ -32,17 +31,11 @@ esp_err_t adc_init(void)
     // Initialize VESC UART interface
     bldc_interface_uart_init(uart_send_function);
     
-    // Set up callbacks
-    bldc_interface_set_rx_value_func(values_callback);
-    
     // Create task to read UART data with increased stack size
     xTaskCreate(uart_rx_task, "uart_rx_task", 4096, NULL, 5, NULL);
-
-    // Create task to periodically request values
-    xTaskCreate(request_values_task, "request_values", 2048, NULL, 5, NULL);
     
     // Create task for nunchuck testing
-    xTaskCreate(test_nunchuck_task, "nunchuck_test", 2048, NULL, 5, NULL);
+    //xTaskCreate(test_nunchuck_task, "nunchuck_test", 2048, NULL, 5, NULL);
 
     ESP_LOGI(ADC_TAG, "ADC and VESC communication initialized");
     
@@ -98,43 +91,15 @@ void adc_stop_timeout_monitor(void)
     }
 }
 
-void values_callback(mc_values *values) {
-    ESP_LOGI(ADC_TAG, "Values received:");
-    ESP_LOGI(ADC_TAG, "RPM: %.1f", values->rpm);
-    ESP_LOGI(ADC_TAG, "Current: %.2f A", values->current_motor);
-    ESP_LOGI(ADC_TAG, "Duty: %.1f %%", values->duty_now * 100.0f);
-    ESP_LOGI(ADC_TAG, "V_IN: %.1f V", values->v_in);
-    ESP_LOGI(ADC_TAG, "Temp MOS: %.1f C", values->temp_mos);
-    ESP_LOGI(ADC_TAG, "Temp Motor: %.1f C", values->temp_motor);
-    ESP_LOGI(ADC_TAG, "Amp Hours: %.2f Ah", values->amp_hours);
-    ESP_LOGI(ADC_TAG, "Amp Hours Charged: %.2f Ah", values->amp_hours_charged);
-}
-
 static void uart_rx_task(void *pvParameters)
 {
-    uint8_t data[64];
+    uint8_t data[128];
     while (1) {
-        int len = uart_read_bytes(UART_NUM_1, data, sizeof(data), pdMS_TO_TICKS(20));
-        if (len > 0) {
-            ESP_LOGI(ADC_TAG, "Received %d bytes from UART", len);
-            for (int i = 0; i < len; i++) {
-                bldc_interface_uart_process_byte(data[i]);
-            }
+        int len = uart_read_bytes(UART_NUM_1, data, sizeof(data), pdMS_TO_TICKS(10));
+        for (int i = 0; i < len; i++) {
+            bldc_interface_uart_process_byte(data[i]);
         }
-        vTaskDelay(pdMS_TO_TICKS(1));
         bldc_interface_uart_run_timer();
-    }
-}
-
-static void request_values_task(void *pvParameters)
-{
-    // Add a delay before starting to request values
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    
-    while (1) {
-        ESP_LOGI(ADC_TAG, "Requesting VESC values...");
-        bldc_interface_get_values();
-        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
 
@@ -148,15 +113,20 @@ static void configure_uart(void)
     uart_config_t uart_config = {
         .baud_rate = 115200,
         .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
+        .parity    = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_DEFAULT,
+        .source_clk = UART_SCLK_APB,
     };
     
-    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_1, 2048, 2048, 0, NULL, 0));
+    // Configure UART parameters
     ESP_ERROR_CHECK(uart_param_config(UART_NUM_1, &uart_config));
-    ESP_ERROR_CHECK(uart_set_pin(UART_NUM_1, GPIO_NUM_18, GPIO_NUM_17, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    
+    // Set UART pins
+    ESP_ERROR_CHECK(uart_set_pin(UART_NUM_1, GPIO_NUM_10, GPIO_NUM_9, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    
+    // Install UART driver
+    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_1, 256, 0, 0, NULL, 0));
 }
 
 static void test_nunchuck_task(void *pvParameters) {

@@ -55,6 +55,19 @@ static void vesc_task(void *pvParameters) {
     while (1) {
         bldc_interface_get_values();
         vTaskDelay(pdMS_TO_TICKS(VESC_UPDATE_INTERVAL_MS));
+        
+    }
+}
+
+
+static void uart_rx_task(void *pvParameters) {
+    uint8_t data[128];
+    while (1) {
+        int len = uart_read_bytes(UART_NUM_1, data, sizeof(data), pdMS_TO_TICKS(10));
+        for (int i = 0; i < len; i++) {
+            bldc_interface_uart_process_byte(data[i]);
+        }
+        bldc_interface_uart_run_timer();
     }
 }
 
@@ -89,6 +102,9 @@ void app_main(void)
     adc_init();
     bldc_interface_uart_init(send_packet);
     bldc_interface_set_rx_value_func(bldc_values_received);
+    
+    // Create UART receive task
+    xTaskCreate(uart_rx_task, "uart_rx_task", 4096, NULL, 5, NULL);
     
     // Create task to periodically request VESC values
     xTaskCreate(vesc_task, "vesc_task", 2048, NULL, 5, NULL);

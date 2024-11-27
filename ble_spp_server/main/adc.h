@@ -18,7 +18,6 @@ void adc_reset_value(void);
 void adc_reset_timeout(void);
 void adc_start_timeout_monitor(void);
 void adc_stop_timeout_monitor(void);
-void values_callback(mc_values *values);
 
 // External variable declarations
 extern TaskHandle_t adc_print_task_handle; 
