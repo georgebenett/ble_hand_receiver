@@ -1,7 +1,7 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
   "idf.flashType": "UART",
-  "idf.port": "/dev/ttyACM1",
+  "idf.port": "/dev/ttyACM0",
   "idf.adapterTargetName": "esp32",
   "idf.openOcdConfigs": [
     "board/esp32-wrover-kit-3.3v.cfg"
@@ -13,6 +13,9 @@
     "esp_bt_main.h": "c",
     "task.h": "c",
     "freertos.h": "c",
-    "timers.h": "c"
+    "timers.h": "c",
+    "vesc_uart.h": "c",
+    "bldc_interface_uart.h": "c",
+    "gpio_num.h": "c"
   }
 }
