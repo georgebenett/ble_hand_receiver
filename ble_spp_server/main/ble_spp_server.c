@@ -27,6 +27,8 @@
 #include "adc.h"
 #include "ble_spp_server.h"
 
+extern mc_values* get_stored_vesc_values(void);
+
 #define GATTS_TABLE_TAG  "GATTS_SPP_DEMO"
 #define CLIENT_NAME      "GS-THUMB"
 
@@ -49,6 +51,8 @@ static const uint16_t spp_service_uuid = 0xABF0;
 #ifdef SUPPORT_HEARTBEAT
 #define ESP_GATT_UUID_SPP_HEARTBEAT         0xABF5
 #endif
+
+static void send_vesc_data_task(void *pvParameters);
 
 static const uint8_t spp_adv_data[23] = {
     /* Flags */
@@ -524,6 +528,14 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
     	case ESP_GATTS_WRITE_EVT: {
     	    res = find_char_and_desr_index(p_data->write.handle);
             if(p_data->write.is_prep == false){
+                if(res == SPP_IDX_SPP_DATA_NTF_CFG){
+                    uint16_t descr_value = p_data->write.value[1]<<8 | p_data->write.value[0];
+                    if (descr_value == 0x0001) {
+                        enable_data_ntf = true;
+                    } else if (descr_value == 0x0000) {
+                        enable_data_ntf = false;
+                    }
+                }
                 if(res == SPP_IDX_SPP_DATA_RECV_VAL){
                     if(p_data->write.len == 2) {  // Expecting exactly 2 bytes
                         // Reconstruct the ADC value from the 2 bytes (little-endian)
@@ -571,6 +583,8 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
     	    uint16_t cmd = 0;
             xQueueSend(cmd_heartbeat_queue,&cmd,10/portTICK_PERIOD_MS);
 #endif
+    	    // Create task to send VESC data
+    	    xTaskCreate(send_vesc_data_task, "vesc_data", 2048, NULL, 5, NULL);
         	break;
     	case ESP_GATTS_DISCONNECT_EVT:
             spp_mtu_size = 23;
@@ -699,4 +713,39 @@ esp_err_t ble_spp_server_start(void)
     }
     
     return ESP_OK;
+}
+
+static void send_vesc_data_task(void *pvParameters) {
+    while (1) {
+        if (is_connected && enable_data_ntf) {
+            mc_values* vesc_values = get_stored_vesc_values();
+            
+            // Create buffer for voltage (2 bytes) and RPM (4 bytes)
+            uint8_t buffer[6];
+            
+            // Convert voltage to int16 (multiply by 100 to preserve 2 decimal places)
+            int16_t voltage = (int16_t)(vesc_values->v_in * 100);
+            int32_t rpm = (int32_t)vesc_values->rpm;
+            
+            // Pack voltage (big-endian)
+            buffer[0] = (voltage >> 8) & 0xFF;
+            buffer[1] = voltage & 0xFF;
+            
+            // Pack RPM (big-endian)
+            buffer[2] = (rpm >> 24) & 0xFF;
+            buffer[3] = (rpm >> 16) & 0xFF;
+            buffer[4] = (rpm >> 8) & 0xFF;
+            buffer[5] = rpm & 0xFF;
+            
+            // Log the raw buffer
+            ESP_LOGI(GATTS_TABLE_TAG, "Raw buffer: [%02x %02x %02x %02x %02x %02x]",
+                buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5]);
+            
+            // Send notification
+            esp_ble_gatts_send_indicate(spp_gatts_if, spp_conn_id,
+                spp_handle_table[SPP_IDX_SPP_DATA_NTY_VAL],
+                sizeof(buffer), buffer, false);
+        }
+        vTaskDelay(pdMS_TO_TICKS(100)); // Update every 100ms
+    }
 }

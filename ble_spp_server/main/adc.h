@@ -20,8 +20,8 @@ void adc_reset_value(void);
 void adc_reset_timeout(void);
 void adc_start_timeout_monitor(void);
 void adc_stop_timeout_monitor(void);
-void adc_print_task(void *pvParameters);
+//void adc_print_task(void *pvParameters);
 
 // External variable declarations
-extern TaskHandle_t adc_print_task_handle;
-extern mc_values* get_stored_vesc_values(void); 
+//extern TaskHandle_t adc_print_task_handle;
+//extern mc_values* get_stored_vesc_values(void); 

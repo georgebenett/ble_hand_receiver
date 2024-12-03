@@ -23,7 +23,7 @@ static void uart_send_function(unsigned char *data, unsigned int len);
 static void configure_uart(void);
 static void send_nunchuck_throttle(void *pvParameters);
 
-TaskHandle_t adc_print_task_handle = NULL;
+//TaskHandle_t adc_print_task_handle = NULL;
 
 esp_err_t adc_init(void)
 {
@@ -55,11 +55,11 @@ esp_err_t adc_init(void)
         return ESP_FAIL;
     }
 
-    // Create ADC print task
+    /* Create ADC print task
     if (xTaskCreate(adc_print_task, "adc_print", 4096, NULL, 5, &adc_print_task_handle) != pdPASS) {
         ESP_LOGE(ADC_TAG, "Failed to create ADC print task");
         return ESP_FAIL;
-    }
+    }*/
 
     return ESP_OK;
 }
@@ -79,7 +79,7 @@ void adc_timeout_callback(TimerHandle_t xTimer)
 {
     adc_reset_value();
 }
-
+/*
 void adc_print_task(void *pvParameters)
 {
     while (1) {
@@ -90,7 +90,7 @@ void adc_print_task(void *pvParameters)
             vesc_values->rpm);
         vTaskDelay(pdMS_TO_TICKS(100));
     }
-}
+}*/
 
 void adc_reset_timeout(void)
 {
