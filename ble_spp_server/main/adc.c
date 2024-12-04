@@ -8,6 +8,7 @@
 #include "bldc_interface_uart.h"
 #include "bldc_interface.h"
 #include "soc/gpio_num.h"
+#include "driver/gpio.h"
 
 
 #define ADC_TAG "ADC"
@@ -27,20 +28,33 @@ static void send_nunchuck_throttle(void *pvParameters);
 
 esp_err_t adc_init(void)
 {
+    // Configure GPIO4 as output
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << GPIO_NUM_4),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&io_conf));
+
+    // Set initial state to HIGH (disconnected)
+    gpio_set_level(GPIO_NUM_4, 1);
+
     // Configure UART first
     configure_uart();
-    
+
     // Initialize VESC UART interface
     bldc_interface_uart_init(uart_send_function);
-    
+
     // Create task to read UART data with increased stack size
     xTaskCreate(uart_rx_task, "uart_rx_task", 4096, NULL, 5, NULL);
-    
+
     // Create task for nunchuck testing
     xTaskCreate(send_nunchuck_throttle, "nunchuck_test", 2048, NULL, 5, NULL);
 
     ESP_LOGI(ADC_TAG, "ADC and VESC communication initialized");
-    
+
     // Create the timeout timer
     adc_timeout_timer = xTimerCreate(
         "adc_timeout",
@@ -54,12 +68,6 @@ esp_err_t adc_init(void)
         ESP_LOGE(ADC_TAG, "Failed to create ADC timeout timer");
         return ESP_FAIL;
     }
-
-    /* Create ADC print task
-    if (xTaskCreate(adc_print_task, "adc_print", 4096, NULL, 5, &adc_print_task_handle) != pdPASS) {
-        ESP_LOGE(ADC_TAG, "Failed to create ADC print task");
-        return ESP_FAIL;
-    }*/
 
     return ESP_OK;
 }
@@ -78,13 +86,14 @@ void adc_reset_value(void)
 void adc_timeout_callback(TimerHandle_t xTimer)
 {
     adc_reset_value();
+    gpio_set_level(GPIO_NUM_4, 1);  // Set HIGH on timeout
 }
 /*
 void adc_print_task(void *pvParameters)
 {
     while (1) {
         mc_values* vesc_values = get_stored_vesc_values();
-        ESP_LOGI(ADC_TAG, "ADC: %d | VESC Voltage: %.2fV | Motor RPM: %.1f", 
+        ESP_LOGI(ADC_TAG, "ADC: %d | VESC Voltage: %.2fV | Motor RPM: %.1f",
             current_adc_value,
             vesc_values->v_in,
             vesc_values->rpm);
@@ -98,6 +107,7 @@ void adc_reset_timeout(void)
         if (xTimerReset(adc_timeout_timer, pdMS_TO_TICKS(100)) != pdPASS) {
             ESP_LOGE(ADC_TAG, "Failed to reset ADC timeout timer");
         }
+        gpio_set_level(GPIO_NUM_4, 0);  // Set LOW (LED ON) when receiving packets
     }
 }
 
@@ -152,34 +162,34 @@ static void configure_uart(void)
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
         .source_clk = UART_SCLK_APB,
     };
-    
+
     // Configure UART parameters
     ESP_ERROR_CHECK(uart_param_config(UART_NUM_1, &uart_config));
-    
+
     // Set UART pins
     ESP_ERROR_CHECK(uart_set_pin(UART_NUM_1, GPIO_NUM_10, GPIO_NUM_9, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-    
+
     // Install UART driver
     ESP_ERROR_CHECK(uart_driver_install(UART_NUM_1, 256, 0, 0, NULL, 0));
 }
 
 static void send_nunchuck_throttle(void *pvParameters) {
-  
+
     while (1) {
         uint8_t y_value = current_adc_value;
         // Create packet for nunchuck data
         uint8_t buffer[5];
         int32_t ind = 0;
-        
+
         buffer[ind++] = COMM_SET_CHUCK_DATA;  // Command ID
         buffer[ind++] = 128;                  // x-axis centered
         buffer[ind++] = y_value;              // y-axis variable
         buffer[ind++] = 0;                    // buttons released
         buffer[ind++] = 0;                    // extension data
-        
+
         // Send the packet
         bldc_interface_send_packet(buffer, ind);
-         
+
         // Delay before next update
         vTaskDelay(pdMS_TO_TICKS(20));  // 5ms delay for smooth ramping
     }
