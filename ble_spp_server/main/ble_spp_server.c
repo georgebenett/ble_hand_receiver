@@ -711,7 +711,7 @@ esp_err_t ble_spp_server_start(void)
         ESP_LOGE(GATTS_TABLE_TAG, "Set local MTU failed: %s", esp_err_to_name(ret));
         return ret;
     }
-    
+
     return ESP_OK;
 }
 
@@ -719,28 +719,50 @@ static void send_vesc_data_task(void *pvParameters) {
     while (1) {
         if (is_connected && enable_data_ntf) {
             mc_values* vesc_values = get_stored_vesc_values();
-            
-            // Create buffer for voltage (2 bytes) and RPM (4 bytes)
-            uint8_t buffer[6];
-            
-            // Convert voltage to int16 (multiply by 100 to preserve 2 decimal places)
+
+            // Create buffer for:
+            // voltage (2 bytes)
+            // RPM (4 bytes)
+            // current_motor (2 bytes)
+            // current_in (2 bytes)
+            // amp_hours (2 bytes)
+            // amp_hours_charged (2 bytes)
+            uint8_t buffer[14];
+
+            // Convert values (multiply floats by 100 to preserve 2 decimal places)
             int16_t voltage = (int16_t)(vesc_values->v_in * 100);
             int32_t rpm = (int32_t)vesc_values->rpm;
-            
+            int16_t current_motor = (int16_t)(vesc_values->current_motor * 100);
+            int16_t current_in = (int16_t)(vesc_values->current_in * 100);
+            int16_t amp_hours = (int16_t)(vesc_values->amp_hours * 100);
+            int16_t amp_hours_charged = (int16_t)(vesc_values->amp_hours_charged * 100);
+
             // Pack voltage (big-endian)
             buffer[0] = (voltage >> 8) & 0xFF;
             buffer[1] = voltage & 0xFF;
-            
+
             // Pack RPM (big-endian)
             buffer[2] = (rpm >> 24) & 0xFF;
             buffer[3] = (rpm >> 16) & 0xFF;
             buffer[4] = (rpm >> 8) & 0xFF;
             buffer[5] = rpm & 0xFF;
-            
-            // Log the raw buffer
-            ESP_LOGI(GATTS_TABLE_TAG, "Raw buffer: [%02x %02x %02x %02x %02x %02x]",
-                buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5]);
-            
+
+            // Pack current_motor (big-endian)
+            buffer[6] = (current_motor >> 8) & 0xFF;
+            buffer[7] = current_motor & 0xFF;
+
+            // Pack current_in (big-endian)
+            buffer[8] = (current_in >> 8) & 0xFF;
+            buffer[9] = current_in & 0xFF;
+
+            // Pack amp_hours (big-endian)
+            buffer[10] = (amp_hours >> 8) & 0xFF;
+            buffer[11] = amp_hours & 0xFF;
+
+            // Pack amp_hours_charged (big-endian)
+            buffer[12] = (amp_hours_charged >> 8) & 0xFF;
+            buffer[13] = amp_hours_charged & 0xFF;
+
             // Send notification
             esp_ble_gatts_send_indicate(spp_gatts_if, spp_conn_id,
                 spp_handle_table[SPP_IDX_SPP_DATA_NTY_VAL],
