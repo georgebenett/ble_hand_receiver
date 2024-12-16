@@ -9,7 +9,7 @@
 #include "bldc_interface.h"
 #include "soc/gpio_num.h"
 #include "driver/gpio.h"
-
+#include "hw_config.h"
 
 #define ADC_TAG "ADC"
 
@@ -30,7 +30,7 @@ esp_err_t adc_init(void)
 {
     // Configure GPIO4 as output
     gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << GPIO_NUM_4),
+        .pin_bit_mask = (1ULL << LED_PIN),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -39,7 +39,7 @@ esp_err_t adc_init(void)
     ESP_ERROR_CHECK(gpio_config(&io_conf));
 
     // Set initial state to HIGH (disconnected)
-    gpio_set_level(GPIO_NUM_4, 1);
+    gpio_set_level(LED_PIN, 1);
 
     // Configure UART first
     configure_uart();
@@ -86,7 +86,7 @@ void adc_reset_value(void)
 void adc_timeout_callback(TimerHandle_t xTimer)
 {
     adc_reset_value();
-    gpio_set_level(GPIO_NUM_4, 1);  // Set HIGH on timeout
+    gpio_set_level(LED_PIN, 1);  // Set HIGH on timeout
 }
 /*
 void adc_print_task(void *pvParameters)
@@ -107,7 +107,7 @@ void adc_reset_timeout(void)
         if (xTimerReset(adc_timeout_timer, pdMS_TO_TICKS(100)) != pdPASS) {
             ESP_LOGE(ADC_TAG, "Failed to reset ADC timeout timer");
         }
-        gpio_set_level(GPIO_NUM_4, 0);  // Set LOW (LED ON) when receiving packets
+        gpio_set_level(LED_PIN, 0);  // Set LOW (LED ON) when receiving packets
     }
 }
 
@@ -167,7 +167,7 @@ static void configure_uart(void)
     ESP_ERROR_CHECK(uart_param_config(UART_NUM_1, &uart_config));
 
     // Set UART pins
-    ESP_ERROR_CHECK(uart_set_pin(UART_NUM_1, GPIO_NUM_10, GPIO_NUM_9, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    ESP_ERROR_CHECK(uart_set_pin(UART_NUM_1, UART1_TX_PIN, UART1_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
     // Install UART driver
     ESP_ERROR_CHECK(uart_driver_install(UART_NUM_1, 256, 0, 0, NULL, 0));
