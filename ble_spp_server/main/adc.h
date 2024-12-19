@@ -8,7 +8,7 @@
 
 #define ADC_TIMEOUT_MS 200  // 200ms timeout
 #define THROTTLE_NEUTRAL_VALUE 127
-#define VESC_UPDATE_INTERVAL_MS 300
+#define VESC_UPDATE_INTERVAL_MS 50
 
 extern uint16_t current_adc_value;
 extern TaskHandle_t adc_print_task_handle;
