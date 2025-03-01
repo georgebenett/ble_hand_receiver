@@ -39,7 +39,7 @@ esp_err_t adc_init(void)
     ESP_ERROR_CHECK(gpio_config(&io_conf));
 
     // Set initial state to HIGH (disconnected)
-    gpio_set_level(LED_PIN, 1);
+    gpio_set_level(LED_PIN, 0);
 
     // Configure UART first
     configure_uart();
@@ -86,7 +86,7 @@ void adc_reset_value(void)
 void adc_timeout_callback(TimerHandle_t xTimer)
 {
     adc_reset_value();
-    gpio_set_level(LED_PIN, 1);  // Set HIGH on timeout
+    gpio_set_level(LED_PIN, 0);  // Set HIGH on timeout
 }
 /*
 void adc_print_task(void *pvParameters)
@@ -107,7 +107,7 @@ void adc_reset_timeout(void)
         if (xTimerReset(adc_timeout_timer, pdMS_TO_TICKS(100)) != pdPASS) {
             ESP_LOGE(ADC_TAG, "Failed to reset ADC timeout timer");
         }
-        gpio_set_level(LED_PIN, 0);  // Set LOW (LED ON) when receiving packets
+        gpio_set_level(LED_PIN, 1);  // LED ON when receiving packets
     }
 }
 

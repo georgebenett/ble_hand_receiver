@@ -5,9 +5,9 @@
 #include "esp_err.h"
 
 // Pin definitions
-#define UART1_TX_PIN         GPIO_NUM_10
-#define UART1_RX_PIN         GPIO_NUM_9
-#define LED_PIN              GPIO_NUM_4
+#define UART1_TX_PIN         GPIO_NUM_5
+#define UART1_RX_PIN         GPIO_NUM_18
+#define LED_PIN              GPIO_NUM_12
 
 // UART configurations
 #define UART1_BAUD_RATE     115200
