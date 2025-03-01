@@ -7,4 +7,5 @@ idf_component_register(SRCS
             "bldc_interface.c"
             "bldc_interface_uart.c"
             "packet.c"
+            "led.c"
         INCLUDE_DIRS ".")

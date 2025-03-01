@@ -26,6 +26,7 @@
 #include "esp_gatt_common_api.h"
 #include "adc.h"
 #include "ble_spp_server.h"
+#include "led.h"
 
 extern mc_values* get_stored_vesc_values(void);
 

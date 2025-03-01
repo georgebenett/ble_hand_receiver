@@ -9,6 +9,7 @@
 #include "soc/gpio_num.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "led.h"
 
 static const char *TAG = "MAIN";
 
@@ -94,6 +95,9 @@ void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+    // Initialize LED
+    ESP_ERROR_CHECK(led_init());
 
     // Initialize Bluetooth
     ret = ble_spp_server_init();

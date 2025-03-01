@@ -10,6 +10,7 @@
 #include "soc/gpio_num.h"
 #include "driver/gpio.h"
 #include "hw_config.h"
+#include "led.h"
 
 #define ADC_TAG "ADC"
 
@@ -28,19 +29,6 @@ static void send_nunchuck_throttle(void *pvParameters);
 
 esp_err_t adc_init(void)
 {
-    // Configure GPIO4 as output
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << LED_PIN),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    ESP_ERROR_CHECK(gpio_config(&io_conf));
-
-    // Set initial state to HIGH (disconnected)
-    gpio_set_level(LED_PIN, 0);
-
     // Configure UART first
     configure_uart();
 
@@ -75,6 +63,8 @@ esp_err_t adc_init(void)
 void adc_update_value(uint16_t value)
 {
     current_adc_value = value;
+    adc_reset_timeout();  // Reset the timeout timer
+    led_set_connection_state(true);  // Set LED to connected state on packet reception
     ESP_LOGD(ADC_TAG, "%d", value);
 }
 
@@ -86,7 +76,7 @@ void adc_reset_value(void)
 void adc_timeout_callback(TimerHandle_t xTimer)
 {
     adc_reset_value();
-    gpio_set_level(LED_PIN, 0);  // Set HIGH on timeout
+    led_set_connection_state(false);  // Set LED to disconnected state on timeout
 }
 /*
 void adc_print_task(void *pvParameters)
@@ -107,7 +97,6 @@ void adc_reset_timeout(void)
         if (xTimerReset(adc_timeout_timer, pdMS_TO_TICKS(100)) != pdPASS) {
             ESP_LOGE(ADC_TAG, "Failed to reset ADC timeout timer");
         }
-        gpio_set_level(LED_PIN, 1);  // LED ON when receiving packets
     }
 }
 
@@ -118,6 +107,7 @@ void adc_start_timeout_monitor(void)
             ESP_LOGE(ADC_TAG, "Failed to start ADC timeout timer");
         } else {
             timeout_monitoring_active = true;
+            led_set_connection_state(false);  // Start with LED in disconnected state
             ESP_LOGI(ADC_TAG, "ADC timeout monitoring started");
         }
     }
