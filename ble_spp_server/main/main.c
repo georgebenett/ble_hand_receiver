@@ -106,6 +106,11 @@ void app_main(void)
         return;
     }
 
+    // Set BLE TX power to maximum
+    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P9);
+    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P9);
+    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, ESP_PWR_LVL_P9);
+
     // Start the server
     ret = ble_spp_server_start();
     if (ret != ESP_OK) {
